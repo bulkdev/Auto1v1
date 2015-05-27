@@ -1,0 +1,189 @@
+<?php
+
+namespace Auto1v1;
+
+#use pemapmodder\legionpe\hub\HubPlugin;
+use pocketmine\event\Listener;
+use pocketmine\plugin\PluginBase;
+use pocketmine\event\player\PlayerJoinEvent;
+use pocketmine\event\player\PlayerInteractEvent;
+use pocketmine\event\player\PlayerQuitEvent;
+use pocketmine\event\player\PlayerChatEvent;
+use pocketmine\event\player\PlayerRespawnEvent;
+use pocketmine\event\block\BlockBreakEvent;
+use pocketmine\event\block\BlockPlaceEvent;
+use pocketmine\Player;
+use pocketmine\item\Item;
+use pocketmine\level\Position;
+use pocketmine\utils\Config;
+use pocketmine\command\CommandExecutor;
+use pocketmine\command\CommandSender;
+use pocketmine\command\Command;
+use pocketmine\utils\TextFormat;
+use pocketmine\tile\Tile;
+
+class Main extends PluginBase implements CommandExecutor,Listener{
+
+public function onEnable(){
+		$this->getLogger()->info(TextFormat::LIGHT_PURPLE."Bulk] Auto1v1 Enabled!");
+		$this->getServer()->getPluginManager()->registerEvents($this, $this);
+	}
+	
+    public function onCommand(CommandSender $sender, Command $cmd, $label, array $args){
+        if($cmd->getName() == "autopvp"){
+            if(isset($args[1])){
+                if($sender->hasPermission("autopvp.command." . $args[1])){
+                    switch($args[1]){
+                        case "add":
+                            $i = 0;
+                            $name = array_shift($args);
+                            array_shift($args);
+                            foreach($this->getBlocksByName($name) as $block){
+                                $block->addCommand(implode(" ", $args));
+                                $i++;
+                            }
+                            $sender->sendMessage("Auto1v1] Added 1v1 Sign!");
+                            return true;
+                            break;
+                        case "del":
+                            $i = 0;
+                            $name = array_shift($args);
+                            array_shift($args);
+                            foreach($this->getBlocksByName($name) as $block){
+                                if(($block->delCommand(implode(" ", $args))) !== false){
+                                    $i++;
+                                }
+                            }
+                            $sender->sendMessage("Auto1v1] Removed 1v1 Sign!");
+                            return true;
+                            break;
+                }
+                else{
+                    $sender->sendMessage("You don't have permission.");
+                    return true;
+                }
+            }
+        }
+        else{
+            if($sender instanceof Player){
+                if(isset($args[0])){
+                    if($sender->hasPermission("taptodo.command." . $args[0])){
+                        $this->s[$sender->getName()] = $args;
+                        $sender->sendMessage("Auto1v1] Tap the sign");
+                        return true;
+                    }
+                    else{
+                        $sender->sendMessage("You don't have permission to perform that action.");
+                        return true;
+                    }
+                }
+            }
+            else{
+                $sender->sendMessage("Please run this command in game.");
+                return true;
+            }
+        }
+    }
+        public function onInteract(PlayerInteractEvent $event){
+        if(isset($this->s[$event->getPlayer()->getName()])){
+            $args = $this->s[$event->getPlayer()->getName()];
+            switch($args[0]){
+                case "add":
+                    if(isset($args[1])){
+                        if(($b = $this->getBlock($event->getBlock(), null, null, null)) instanceof Block){
+                            array_shift($args);
+                            $b->addCommand(implode(" ", $args));
+                            $event->getPlayer()->sendMessage("Command added.");
+                        }
+                        else{
+                            array_shift($args);
+                            $this->addBlock($event->getBlock(), implode(" ", $args));
+                            $event->getPlayer()->sendMessage("Command added.");
+                        }
+                    }
+                    else{
+                        $event->getPlayer()->sendMessage("You must specify a command.");
+                    }
+                    break;
+                case "del":
+                    if(isset($args[1])){
+                        if(($b = $this->getBlock($event->getBlock(), null, null, null)) instanceof Block){
+                            array_shift($args);
+                            if(($b->delCommand(implode(" ", $args))) !== false){
+                                $event->getPlayer()->sendMessage("Command removed.");
+                            }
+                            else{
+                                $event->getPlayer()->sendMessage("Couldn't find command.");
+                            }
+                        }
+                        else{
+                            $event->getPlayer()->sendMessage("Block does not exist.");
+                        }
+                    }
+      public function onLevelLoad(LevelLoadEvent $event){
+        $this->getLogger()->info("Reloading blocks due to level loaded...");
+        $this->parseBlockData();
+    }
+    public function getBlocksByName($name){
+        $ret = [];
+        foreach($this->b as $block){
+            if($block->getName() === $name) $ret[] = $block;
+        }
+        return $ret;
+    }
+    public function getBlock($x, $y, $z, $level){
+        if($x instanceof Position) return (isset($this->b[$x->getX() . ":" . $x->getY() . ":" . $x->getZ() . ":" . $x->getLevel()->getName()]) ? $this->b[$x->getX() . ":" . $x->getY() . ":" . $x->getZ() . ":" . $x->getLevel()->getName()] : false);
+        else return (isset($this->b[$x . ":" . $y . ":" . $z . ":" . $level]) ? $this->b[$x . ":" . $y . ":" . $z . ":" . $level] : false);
+    }
+    public function parseBlockData(){
+        $this->b = [];
+        foreach($this->config->get("blocks") as $i => $block){
+            if($this->getServer()->isLevelLoaded($block["level"])){
+                $pos = new Position($block["x"], $block["y"], $block["z"], $this->getServer()->getLevelByName($block["level"]));
+                if(isset($block["name"])) $this->b[$pos->__toString()] = new Block($pos, $block["commands"], $this->config, $block["name"]);
+                else $this->b[$block["x"] . ":" . $block["y"] . ":" . $block["z"] . ":" . $block["level"]] = new Block($pos, $block["commands"], $this, $i);
+            }
+            else{
+                $this->getLogger()->warning("Could not load block in level " . $block["level"] . " because that level is not loaded.");
+            }
+        }
+    }
+    public function removeBlock(Block $block){
+        $blocks = $this->config->get("blocks");
+        unset($blocks[$block->id]);
+        $this->config->set("blocks", $blocks);
+        $this->config->save();
+        $this->parseBlockData();
+    }
+    public function addBlock(Position $p, $cmd){
+        $block = new Block(new Position($p->getX(), $p->getY(), $p->getZ(), $p->getLevel()), [$cmd], $this, count($this->config->get("blocks")));
+        $this->saveBlock($block);
+        $this->config->save();
+        return $block;
+    }
+    public function saveBlock(Block $block){
+        $this->b[$block->getPos()->getX() . ":" . $block->getPos()->getY() . ":" . $block->getPos()->getZ() . ":" . $block->getPos()->getLevel()->getName()] = $block;
+        $blocks = $this->config->get("blocks");
+        $blocks[$block->id] = $block->toArray();
+        $this->config->set("blocks", $blocks);
+    }
+    public function onDisable(){
+        $this->getLogger()->info("Saving blocks...");
+        foreach($this->b as $block){
+            $this->saveBlock($block);
+        }
+        $this->config->save();
+    }
+    /**
+     * @return mixed
+     */
+    public function getConfig(){
+        return $this->config;
+    }
+    /**
+     * @param mixed $config
+     */
+    public function setConfig($config){
+        $this->config = $config;
+    }
+}
